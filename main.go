@@ -1,19 +1,32 @@
-package main
+package main // import "github.com/psanford/unsubscribe"
 
 import (
+	"crypto/tls"
+	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/smtp"
 	"os"
 )
 
+var (
+	smtpAddress  = flag.String("stmp-address", "localhost:25", "STMP server address")
+	useTLS       = flag.Bool("tls", true, "Use STARTTLS")
+	authUser     = flag.String("auth-user", "", "Authenticate to server as user")
+	authPassword = flag.String("auth-password", "", "Authenticate to server with password")
+)
+
 func main() {
-	if len(os.Args) != 3 {
+	flag.Parse()
+
+	args := flag.Args()
+	if len(args) != 2 {
 		log.Fatalf("usage: %s <from_address> <to_address>\n", os.Args[0])
 	}
 
-	from := os.Args[1]
-	to := os.Args[2]
+	from := args[0]
+	to := args[1]
 
 	headers := []Header{
 		{"From", from},
@@ -31,11 +44,32 @@ func main() {
 	message = append(message, []byte("\r\n")...)
 	message = append(message, []byte("unsubscribe")...)
 
-	c, err := smtp.Dial("localhost:25")
+	c, err := smtp.Dial(*smtpAddress)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer c.Close()
+
+	host, _, err := net.SplitHostPort(*smtpAddress)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	tc := tls.Config{
+		ServerName: host,
+	}
+
+	if err = c.StartTLS(&tc); err != nil {
+		log.Fatal(err)
+	}
+
+	if *authUser != "" {
+		a := smtp.PlainAuth("", *authUser, *authPassword, host)
+		if err = c.Auth(a); err != nil {
+			log.Fatal(err)
+		}
+	}
+
 	if err = c.Mail(from); err != nil {
 		log.Fatal(err)
 	}
